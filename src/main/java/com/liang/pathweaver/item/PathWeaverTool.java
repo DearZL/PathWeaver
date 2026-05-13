@@ -179,14 +179,12 @@ public class PathWeaverTool extends Item {
                     BlockState state = level.getBlockState(new BlockPos(x, y, z));
                     if (state.isAir()) continue;
                     int lz = switch (facing) {
-                        case NORTH -> maxZ - z;
                         case SOUTH -> z - minZ;
                         case EAST  -> x - minX;
                         case WEST  -> maxX - x;
                         default    -> maxZ - z;
                     };
                     int lx = switch (facing) {
-                        case NORTH -> x - minX;
                         case SOUTH -> maxX - x;
                         case EAST  -> z - minZ;
                         case WEST  -> maxZ - z;

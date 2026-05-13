@@ -12,7 +12,7 @@ public class ModMessages {
 
     public static void register() {
         CHANNEL = NetworkRegistry.newSimpleChannel(
-                new ResourceLocation(PathWeaver.MOD_ID + ":main"),
+                ResourceLocation.fromNamespaceAndPath(PathWeaver.MOD_ID, "main"),
                 () -> PROTOCOL,
                 PROTOCOL::equals,
                 PROTOCOL::equals);

@@ -78,7 +78,7 @@ public class PathGenerator {
 
             if (!level.isLoaded(world)) continue;
 
-            BlockState rotatedState = state.rotate(rotation);
+            BlockState rotatedState = state.rotate(level, world, rotation);
             BlockState oldState = level.getBlockState(world);
             undo.add(new UndoEntry(world, oldState, level.dimension()));
             level.setBlock(world, rotatedState, 3);

@@ -3,6 +3,7 @@ package com.liang.pathweaver.logic;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +54,10 @@ public class BezierUtil {
         // 后处理：仅在左转弯（逆时针）时插入拐角补丁砖
         // 右转弯时相邻瓦片已自然重叠，不需要补丁；强行插入反而会在外侧多出一块突起
         // 判断左/右转：XZ 平面叉积 < 0 为左转，> 0 为右转
+        return getBezierPoints(raw);
+    }
+
+    private static @NotNull List<BezierPoint> getBezierPoints(List<BezierPoint> raw) {
         List<BezierPoint> result = new ArrayList<>();
         for (int i = 0; i < raw.size(); i++) {
             result.add(raw.get(i));

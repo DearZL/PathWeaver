@@ -15,7 +15,6 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -288,8 +287,6 @@ public class ClientHandler {
         };
         int ox = origin.getX(), oy = origin.getY(), oz = origin.getZ();
         AABB box = switch (pathDir) {
-            case NORTH -> new AABB(ox, oy, oz - templateLength + 1,
-                    ox + templateWidth, oy + templateHeight, oz + 1);
             case SOUTH -> new AABB(ox - templateWidth + 1, oy, oz,
                     ox + 1, oy + templateHeight, oz + templateLength);
             case EAST  -> new AABB(ox, oy, oz,
