@@ -14,7 +14,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -25,48 +24,14 @@ public class PathGenerator {
         TemplateData template = data.template;
         List<BlockPos> points = data.pathPoints;
 
-        if (data.pathMode == PathMode.LINEAR) {
-            generateLinear(level, template, points, undoEntries);
-        } else {
-            generateBezier(level, template, points, undoEntries);
+        List<BezierUtil.BezierPoint> tiles = (data.pathMode == PathMode.LINEAR)
+                ? BezierUtil.computeLinearTiles(points, template.length)
+                : BezierUtil.computeBezierTiles(points, template.length);
+
+        for (BezierUtil.BezierPoint p : tiles) {
+            placeTemplate(level, template, p.pos(), p.direction(), undoEntries);
         }
         return undoEntries;
-    }
-
-    private static void generateLinear(ServerLevel level, TemplateData template,
-                                        List<BlockPos> points, List<UndoEntry> undo) {
-        List<BezierUtil.BezierPoint> tiles = new ArrayList<>();
-        for (int i = 0; i + 1 < points.size(); i++) {
-            BlockPos from = points.get(i);
-            BlockPos to = points.get(i + 1);
-            Direction dir = dominantDirection(from, to);
-            double dx = to.getX() - from.getX();
-            double dz = to.getZ() - from.getZ();
-            double segLen = Math.sqrt(dx * dx + dz * dz);
-            if (segLen < 0.001) {
-                tiles.add(new BezierUtil.BezierPoint(from, dir));
-            } else {
-                tiles.add(new BezierUtil.BezierPoint(from, dir));
-                for (double dist = template.length; dist < segLen; dist += template.length) {
-                    double frac = dist / segLen;
-                    int x = (int) Math.round(from.getX() + dx * frac);
-                    int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
-                    int z = (int) Math.round(from.getZ() + dz * frac);
-                    tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
-                }
-            }
-        }
-        for (BezierUtil.BezierPoint p : new LinkedHashSet<>(tiles)) {
-            placeTemplate(level, template, p.pos(), p.direction(), undo);
-        }
-    }
-
-    private static void generateBezier(ServerLevel level, TemplateData template,
-                                         List<BlockPos> points, List<UndoEntry> undo) {
-        List<BezierUtil.BezierPoint> samples = BezierUtil.sampleMultiSegmentCurve(points, template.length);
-        for (BezierUtil.BezierPoint sample : new LinkedHashSet<>(samples)) {
-            placeTemplate(level, template, sample.pos(), sample.direction(), undo);
-        }
     }
 
     private static void placeTemplate(ServerLevel level, TemplateData template,
@@ -88,7 +53,7 @@ public class PathGenerator {
         }
     }
 
-    private static BlockPos centerOrigin(BlockPos origin, Direction pathDir, int width) {
+    static BlockPos centerOrigin(BlockPos origin, Direction pathDir, int width) {
         int half = width / 2;
         return switch (pathDir) {
             case EAST  -> origin.offset(0, 0, -half);
@@ -99,25 +64,10 @@ public class PathGenerator {
         };
     }
 
-    private static Direction dominantDirection(BlockPos from, BlockPos to) {
-        int dx = to.getX() - from.getX();
-        int dz = to.getZ() - from.getZ();
-        if (Math.abs(dx) >= Math.abs(dz)) {
-            return dx >= 0 ? Direction.EAST : Direction.WEST;
-        } else {
-            return dz >= 0 ? Direction.SOUTH : Direction.NORTH;
-        }
-    }
-
-    /**
-     * Returns the total items required per type, aggregated by Item (not BlockState),
-     * so that different orientations of the same block are counted together.
-     */
     public static Map<Item, Integer> collectRequiredBlocks(PlayerPathData data) {
         TemplateData template = data.template;
         List<BlockPos> points = data.pathPoints;
 
-        // Count how many of each item one tile placement needs
         Map<Item, Integer> itemsPerTile = new HashMap<>();
         for (BlockState state : template.blocks.values()) {
             Item item = state.getBlock().asItem();
@@ -126,35 +76,11 @@ public class PathGenerator {
             }
         }
 
-        int tileCount = 0;
-        if (data.pathMode == PathMode.LINEAR) {
-            List<BezierUtil.BezierPoint> tiles = new ArrayList<>();
-            for (int i = 0; i + 1 < points.size(); i++) {
-                BlockPos from = points.get(i), to = points.get(i + 1);
-                Direction dir = dominantDirection(from, to);
-                double dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
-                double segLen = Math.sqrt(dx * dx + dz * dz);
-                if (segLen < 0.001) {
-                    tiles.add(new BezierUtil.BezierPoint(from, dir));
-                } else {
-                    tiles.add(new BezierUtil.BezierPoint(from, dir));
-                    for (double dist = template.length; dist < segLen; dist += template.length) {
-                        double frac = dist / segLen;
-                        int x = (int) Math.round(from.getX() + dx * frac);
-                        int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
-                        int z = (int) Math.round(from.getZ() + dz * frac);
-                        tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
-                    }
-                }
-            }
-            tileCount = new LinkedHashSet<>(tiles).size();
-        } else {
-            tileCount = new LinkedHashSet<>(
-                    BezierUtil.sampleMultiSegmentCurve(points, template.length)).size();
-        }
+        int tileCount = (data.pathMode == PathMode.LINEAR)
+                ? BezierUtil.computeLinearTiles(points, template.length).size()
+                : BezierUtil.computeBezierTiles(points, template.length).size();
 
-        final int total = tileCount;
-        itemsPerTile.replaceAll((item, count) -> count * total);
+        itemsPerTile.replaceAll((item, count) -> count * tileCount);
         return itemsPerTile;
     }
 }

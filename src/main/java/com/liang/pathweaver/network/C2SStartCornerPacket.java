@@ -31,13 +31,13 @@ public class C2SStartCornerPacket {
             PlayerPathData data = PathDataManager.get(player.getUUID());
 
             data.clearPathPoints();
-            data.pendingCorner = pkt.pos;
+            // Don't set pendingCorner yet — let the user right-click to place it.
+            // This gives them a clear "now select the first corner" state after
+            // confirming the dialog, instead of having the corner auto-placed
+            // at the dialog-triggering click position.
 
-            String hint = data.hasTemplate()
-                    ? " §7(重新框选模板中，旧模板暂留)"
-                    : " | 再次右键确定角点2";
             player.sendSystemMessage(Component.literal(
-                    "§a[PathWeaver] 框选角点1: " + fmtPos(pkt.pos) + hint));
+                    "§a[PathWeaver] 路径点已清空 | 右键方块框选角点1"));
 
             PathWeaverTool.syncState(player, data);
         });

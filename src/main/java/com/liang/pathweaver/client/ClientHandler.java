@@ -41,7 +41,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+
 import java.util.List;
 import java.util.Map;
 
@@ -345,7 +345,9 @@ public class ClientHandler {
 
         VertexConsumer lines = src.getBuffer(RenderType.lines());
 
-        // 1. 已完成的框选区域 — 体积光雾笼 + 扫描面 + 角柱 + 扫描线 + 角点标记
+        // ═══════════════════════════════════════════════════════
+        // 1. 已完成的框选区域 — 霓虹光效 + 全息填充 + 角柱
+        // ═══════════════════════════════════════════════════════
         float regPulse = (float)(Math.sin(time * 0.12) * 0.4 + 0.6);
         for (int i = 0; i < regions.size(); i++) {
             float[] c = REGION_COLORS[i % REGION_COLORS.length];
@@ -355,58 +357,80 @@ public class ClientHandler {
             int minZ = Math.min(r[0].getZ(), r[1].getZ()), maxZ = Math.max(r[0].getZ(), r[1].getZ());
             AABB box = new AABB(minX, minY, minZ, maxX + 1, maxY + 1, maxZ + 1);
 
-            // —— 体积光雾笼：5 层半透明网格面，从内核向外扩散形成雾化光芒 ——
-            float auraPulse = (float)(Math.sin(time * 0.09 + i * 0.8f) * 0.25 + 0.75);
-            renderGlowFaces(ps, lines, box,                   c[0], c[1], c[2], regPulse * auraPulse * 0.18f, 0.45f);
-            renderGlowFaces(ps, lines, box.inflate(0.035),    c[0], c[1], c[2], regPulse * auraPulse * 0.12f, 0.55f);
-            renderGlowFaces(ps, lines, box.inflate(0.08),     c[0], c[1], c[2], regPulse * auraPulse * 0.07f, 0.70f);
-            renderGlowFaces(ps, lines, box.inflate(0.15),     c[0], c[1], c[2], regPulse * auraPulse * 0.04f, 0.90f);
-            renderGlowFaces(ps, lines, box.inflate(0.26),     c[0], c[1], c[2], regPulse * auraPulse * 0.018f, 1.20f);
+            // ── 全息填充表面：6面密集网格模拟半透明实体 ──
+            float fillAlpha = regPulse * 0.55f;
+            renderHologramFaces(ps, lines, box, c[0], c[1], c[2], fillAlpha, 0.25f);
 
-            // —— 正交双垂直扫描面（X/Z 方向各一，交错扫过整个体积） ——
-            renderVerticalScanPlane(ps, lines, box, c[0], c[1], c[2], regPulse * 0.18f, time, 0);
-            renderVerticalScanPlane(ps, lines, box, c[0], c[1], c[2], regPulse * 0.18f, time, 1);
+            // ── 霓虹光晕：4 层扩散边框 (bloom effect) ──
+            renderNeonBox(ps, lines, box, c[0], c[1], c[2], regPulse);
 
-            // —— 双横向扫描线 ——
-            float sa = 0.28f + regPulse * 0.22f;
+            // ── 正交双垂直扫描面 (能量感) ──
+            renderVerticalScanPlane(ps, lines, box, c[0], c[1], c[2], regPulse * 0.55f, time, 0);
+            renderVerticalScanPlane(ps, lines, box, c[0], c[1], c[2], regPulse * 0.55f, time, 1);
+
+            // ── 横向扫描光环 ──
+            float sa = 0.55f + regPulse * 0.35f;
             for (float phase : new float[]{0f, (float) Math.PI}) {
                 double scanY = box.minY + (box.maxY - box.minY) * ((float)(Math.sin(time * 0.07 + i * 1.4f + phase) * 0.5 + 0.5));
-                drawThickLine(ps, lines, new Vec3(box.minX, scanY, box.minZ), new Vec3(box.maxX, scanY, box.minZ), c[0], c[1], c[2], sa, 0.028f);
-                drawThickLine(ps, lines, new Vec3(box.maxX, scanY, box.minZ), new Vec3(box.maxX, scanY, box.maxZ), c[0], c[1], c[2], sa, 0.028f);
-                drawThickLine(ps, lines, new Vec3(box.maxX, scanY, box.maxZ), new Vec3(box.minX, scanY, box.maxZ), c[0], c[1], c[2], sa, 0.028f);
-                drawThickLine(ps, lines, new Vec3(box.minX, scanY, box.maxZ), new Vec3(box.minX, scanY, box.minZ), c[0], c[1], c[2], sa, 0.028f);
+                Vec3[] hRing = horizontalRingAt(box, scanY);
+                for (int e = 0; e < 4; e++)
+                    drawThickLine(ps, lines, hRing[e], hRing[(e+1)%4], c[0], c[1], c[2], sa, 0.060f);
             }
 
-            // —— 四角光束柱 + 中腰连接环 ——
-            renderVerticalBeams(ps, lines, box, c[0], c[1], c[2], regPulse * 0.65f, time);
+            // ── 四角能量柱 ──
+            renderEnergyPillars(ps, lines, box, c[0], c[1], c[2], regPulse * 0.90f, time);
 
-            // —— 边缘锐利轮廓线（在最外层勾勒清晰边界） ——
-            renderDashedBox(ps, lines, box.inflate(0.005), c[0], c[1], c[2], regPulse * 0.55f, time, 0.90f + i * 0.10f);
+            // ── 跑马灯轮廓 ──
+            renderRacingBorder(ps, lines, box.inflate(0.01), c[0], c[1], c[2], regPulse * 0.90f, time, 1.40f + i * 0.12f);
 
-            // —— 8 角括号 + 钻石 ——
-            float bLen = (float)Math.max(0.18, Math.min(0.5,
-                    Math.min(maxX - minX + 1, Math.min(maxY - minY + 1, maxZ - minZ + 1)) * 0.22));
-            bLen += (float)(Math.sin(time * 0.2 + i * 1.1f) * 0.04);
+            // ── 角括号 + 能量钻 ──
+            float bLen = (float)Math.max(0.30, Math.min(0.72,
+                    Math.min(maxX - minX + 1, Math.min(maxY - minY + 1, maxZ - minZ + 1)) * 0.35));
+            bLen += (float)(Math.sin(time * 0.2 + i * 1.1f) * 0.08);
             renderCornerBrackets(ps, lines, box, c[0], c[1], c[2], 1f, bLen);
-            float dSize = 0.20f + regPulse * 0.10f;
-            renderDiamondCorners(ps, lines, box, c[0], c[1], c[2], regPulse * 0.72f, dSize);
+            float dSize = 0.32f + regPulse * 0.18f;
+            renderDiamondCorners(ps, lines, box, c[0], c[1], c[2], regPulse * 0.90f, dSize);
 
-            // —— 角点十字 ——
+            // ── 角点十字 ──
             renderCrossMarker(ps, lines, r[0], time, c[0], c[1], c[2]);
             renderCrossMarker(ps, lines, r[1], time, c[0], c[1], c[2]);
         }
 
-        // 2. 待定角点标记（金色粗十字 + 外层扩散大十字）
+        // ═══════════════════════════════════════════════════════
+        // 2. 待定角点 — 信标光柱 + 扩展光环 + 预览框
+        // ═══════════════════════════════════════════════════════
         if (pendingCorner != null) {
             float gp = (float)(Math.sin(time * 0.22) * 0.5 + 0.5);
-            renderCrossMarker(ps, lines, pendingCorner, time, 1f, 0.90f, 0f);
-            float sz = 0.50f + gp * 0.15f;
             double px = pendingCorner.getX() + 0.5, py = pendingCorner.getY() + 0.5, pz = pendingCorner.getZ() + 0.5;
-            drawThickLine(ps, lines, new Vec3(px - sz, py, pz), new Vec3(px + sz, py, pz), 1f, 1f, 0.35f, 0.25f + gp * 0.35f, 0.022f);
-            drawThickLine(ps, lines, new Vec3(px, py - sz, pz), new Vec3(px, py + sz, pz), 1f, 1f, 0.35f, 0.25f + gp * 0.35f, 0.022f);
-            drawThickLine(ps, lines, new Vec3(px, py, pz - sz), new Vec3(px, py, pz + sz), 1f, 1f, 0.35f, 0.25f + gp * 0.35f, 0.022f);
 
-            // 3. 动态预览框 — 简洁彩虹轮廓 + 半透明表面 + 角括号
+            // ── 金色粗十字 ──
+            renderCrossMarker(ps, lines, pendingCorner, time, 1f, 0.80f, 0f);
+            float sz = 0.65f + gp * 0.25f;
+            float markerAlpha = 0.70f + gp * 0.30f;
+            drawThickLine(ps, lines, new Vec3(px - sz, py, pz), new Vec3(px + sz, py, pz), 1f, 0.85f, 0.05f, markerAlpha, 0.045f);
+            drawThickLine(ps, lines, new Vec3(px, py - sz, pz), new Vec3(px, py + sz, pz), 1f, 0.85f, 0.05f, markerAlpha, 0.045f);
+            drawThickLine(ps, lines, new Vec3(px, py, pz - sz), new Vec3(px, py, pz + sz), 1f, 0.85f, 0.05f, markerAlpha, 0.045f);
+
+            // ── 垂直信标光柱 ──
+            float beamH = 6f + gp * 3f;
+            for (int b = 0; b < 3; b++) {
+                float bx = (float)(px + (b == 0 ? 0 : (b == 1 ? 0.12 : -0.12)));
+                float bz = (float)(pz + (b == 0 ? 0 : (b == 1 ? 0.12 : -0.12)));
+                float ba = (0.50f + gp * 0.30f) * (b == 0 ? 1f : 0.35f);
+                drawThickLine(ps, lines,
+                        new Vec3(bx, py + 0.4f, bz), new Vec3(bx, py + beamH, bz),
+                        1f, 0.88f, 0.05f, ba, b == 0 ? 0.06f : 0.03f);
+            }
+
+            // ── 扩展光环 (3 圈) ──
+            for (int ring = 0; ring < 3; ring++) {
+                float ringY = (float)(py + 0.3f + ring * 1.5f + gp * 0.6f);
+                float ringR = 0.35f + ring * 0.15f + gp * 0.12f;
+                float ringA = 0.45f - ring * 0.13f + gp * 0.15f;
+                renderRingXZ(ps, lines, px, ringY, pz, ringR, 12, 1f, 0.90f, 0.10f, ringA, 0.025f);
+            }
+
+            // ── 动态预览框 ──
             if (mc.hitResult instanceof BlockHitResult bhr) {
                 BlockPos target = bhr.getBlockPos();
                 int mnX = Math.min(pendingCorner.getX(), target.getX());
@@ -417,18 +441,21 @@ public class ClientHandler {
                 int mxZ = Math.max(pendingCorner.getZ(), target.getZ());
                 AABB prev = new AABB(mnX, mnY, mnZ, mxX + 1, mxY + 1, mxZ + 1);
 
-                float hue = (time * 0.018f) % 1.0f;
-                float[] rc = hsvToRgb(hue, 0.50f, 1.0f);
-                float pa = (float)(Math.sin(time * 0.25) * 0.15 + 0.35);
+                float hue = (time * 0.020f) % 1.0f;
+                float[] rc = hsvToRgb(hue, 0.70f, 1.0f);
+                float pa = (float)(Math.sin(time * 0.25) * 0.22 + 0.55);
 
-                // 单层半透明表面
-                renderGlowFaces(ps, lines, prev, rc[0], rc[1], rc[2], pa * 0.16f, 0.55f);
-                // 外层微光晕
-                renderGlowFaces(ps, lines, prev.inflate(0.04), rc[0], rc[1], rc[2], pa * 0.08f, 0.75f);
-                // 锐利轮廓虚线
-                renderDashedBox(ps, lines, prev.inflate(0.005), rc[0], rc[1], rc[2], pa * 0.50f, time, 1.4f);
-                // 8角括号
-                renderCornerBrackets(ps, lines, prev, rc[0], rc[1], rc[2], pa * 1.4f, 0.25f);
+                // 全息填充
+                renderHologramFaces(ps, lines, prev, rc[0], rc[1], rc[2], pa * 0.42f, 0.22f);
+                // 光晕外扩
+                renderHologramFaces(ps, lines, prev.inflate(0.06), rc[0], rc[1], rc[2], pa * 0.20f, 0.38f);
+                renderHologramFaces(ps, lines, prev.inflate(0.14), rc[0], rc[1], rc[2], pa * 0.09f, 0.58f);
+                // 霓虹边框
+                renderNeonBox(ps, lines, prev, rc[0], rc[1], rc[2], pa);
+                // 跑马灯
+                renderRacingBorder(ps, lines, prev.inflate(0.01), rc[0], rc[1], rc[2], pa * 0.85f, time, 1.80f);
+                // 角括号
+                renderCornerBrackets(ps, lines, prev, rc[0], rc[1], rc[2], pa * 1.8f, 0.40f);
             }
         }
 
@@ -441,7 +468,7 @@ public class ClientHandler {
                 Vec3 b = blockCenter(pathPoints.get(i + 1));
                 drawThickLineGradient(ps, lines, a, b,
                         gradR(frac), gradG(frac), gradB(frac),
-                        gradR(frac1), gradG(frac1), gradB(frac1), 0.022f);
+                        gradR(frac1), gradG(frac1), gradB(frac1), 0.035f);
             }
         }
 
@@ -485,21 +512,35 @@ public class ClientHandler {
                                                BlockPos pos, float time, int index) {
         float phase = (pos.getX() * 1.3f + pos.getZ() * 0.9f) * 0.5f;
         float pulse = (float)(Math.sin(time * 0.18 + phase) * 0.5 + 0.5);
+        float r = 0.10f, g = 0.75f, b = 1f;
 
-        float half = 0.12f + pulse * 0.07f;
-        double cx = pos.getX() + 0.5, cz = pos.getZ() + 0.5;
-        double baseY = pos.getY() + 1.0;
+        double px = pos.getX() + 0.5, py = pos.getY() + 0.5, pz = pos.getZ() + 0.5;
+        float markerAlpha = 0.55f + pulse * 0.45f;
 
-        AABB box = new AABB(cx - half, baseY, cz - half, cx + half, baseY + half * 2, cz + half);
-        renderBox(ps, lines, box, 0f, 0.75f + pulse * 0.25f, 1f, 0.55f + pulse * 0.45f);
+        // ── Cyan cross marker ──
+        float sz = 0.40f + pulse * 0.18f;
+        drawThickLine(ps, lines, new Vec3(px - sz, py, pz), new Vec3(px + sz, py, pz), r, g, b, markerAlpha, 0.035f);
+        drawThickLine(ps, lines, new Vec3(px, py - sz, pz), new Vec3(px, py + sz, pz), r, g, b, markerAlpha, 0.035f);
+        drawThickLine(ps, lines, new Vec3(px, py, pz - sz), new Vec3(px, py, pz + sz), r, g, b, markerAlpha, 0.035f);
 
-        float beamH = 0.15f + pulse * 1.0f;
-        float beamAlpha = 0.3f + pulse * 0.6f;
-        float topY = (float)(baseY + half * 2);
-        drawThickLine(ps, lines,
-                new Vec3(cx, topY, cz),
-                new Vec3(cx, topY + beamH, cz),
-                0.2f, 0.85f, 1f, beamAlpha, 0.018f);
+        // ── Beacon pillar ──
+        float beamH = 2.5f + pulse * 1.5f;
+        for (int beam = 0; beam < 3; beam++) {
+            float bx = (float)(px + (beam == 0 ? 0 : (beam == 1 ? 0.10 : -0.10)));
+            float bz = (float)(pz + (beam == 0 ? 0 : (beam == 1 ? 0.10 : -0.10)));
+            float ba = (0.45f + pulse * 0.35f) * (beam == 0 ? 1f : 0.30f);
+            drawThickLine(ps, lines,
+                    new Vec3(bx, py + 0.3f, bz), new Vec3(bx, py + beamH, bz),
+                    r, g, b, ba, beam == 0 ? 0.045f : 0.022f);
+        }
+
+        // ── Expanding rings ──
+        for (int ring = 0; ring < 2; ring++) {
+            float ringY = (float)(py + 0.15f + ring * 1.2f + pulse * 0.4f);
+            float ringR = 0.25f + ring * 0.10f + pulse * 0.08f;
+            float ringA = 0.40f - ring * 0.15f + pulse * 0.12f;
+            renderRingXZ(ps, lines, px, ringY, pz, ringR, 10, r, g, b, ringA, 0.020f);
+        }
     }
 
     // ---- 路径点序号（全息浮空数字，面朝镜头，透墙可见） ----
@@ -558,38 +599,12 @@ public class ClientHandler {
         float pulse = (float)(Math.sin(time * 0.12) * 0.35 + 0.65);
         int tileCount = 0;
 
-        if (pathMode == PathMode.LINEAR) {
-            List<BezierUtil.BezierPoint> tiles = new ArrayList<>();
-            for (int i = 0; i + 1 < pathPoints.size(); i++) {
-                BlockPos from = pathPoints.get(i), to = pathPoints.get(i + 1);
-                Direction dir = dominantDir(from, to);
-                double dx = to.getX() - from.getX();
-                double dz = to.getZ() - from.getZ();
-                double segLen = Math.sqrt(dx * dx + dz * dz);
-                if (segLen < 0.001) {
-                    tiles.add(new BezierUtil.BezierPoint(from, dir));
-                } else {
-                    tiles.add(new BezierUtil.BezierPoint(from, dir));
-                    for (double dist = templateLength; dist < segLen; dist += templateLength) {
-                        double frac = dist / segLen;
-                        int x = (int) Math.round(from.getX() + dx * frac);
-                        int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
-                        int z = (int) Math.round(from.getZ() + dz * frac);
-                        tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
-                    }
-                }
-            }
-            for (BezierUtil.BezierPoint s : new LinkedHashSet<>(tiles)) {
-                renderTileBlocks(ps, lines, s.pos(), s.direction(), pulse);
-                tileCount++;
-            }
-        } else {
-            List<BezierUtil.BezierPoint> samples =
-                    BezierUtil.sampleMultiSegmentCurve(pathPoints, templateLength);
-            for (BezierUtil.BezierPoint s : new LinkedHashSet<>(samples)) {
-                renderTileBlocks(ps, lines, s.pos(), s.direction(), pulse);
-                tileCount++;
-            }
+        List<BezierUtil.BezierPoint> tiles = (pathMode == PathMode.LINEAR)
+                ? BezierUtil.computeLinearTiles(pathPoints, templateLength)
+                : BezierUtil.computeBezierTiles(pathPoints, templateLength);
+        for (BezierUtil.BezierPoint s : tiles) {
+            renderTileBlocks(ps, lines, s.pos(), s.direction(), pulse);
+            tileCount++;
         }
         previewTileCount = tileCount;
     }
@@ -851,54 +866,6 @@ public class ClientHandler {
         }
     }
 
-    /** Draw a box with animated dashed edges (racing light effect). */
-    private static void renderDashedBox(PoseStack ps, VertexConsumer lines, AABB box,
-                                         float r, float g, float b, float a, float time, float speed) {
-        double[][] edges = {
-            {box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ},
-            {box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ},
-            {box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ},
-            {box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ},
-            {box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ},
-            {box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ},
-            {box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ},
-            {box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ},
-            {box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ},
-            {box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ},
-            {box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ},
-            {box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ},
-        };
-        int segments = 10;
-        float dashRatio = 0.50f;
-        for (int ei = 0; ei < edges.length; ei++) {
-            double[] e = edges[ei];
-            double dx = e[3] - e[0], dy = e[4] - e[1], dz = e[5] - e[2];
-            for (int s = 0; s < segments; s++) {
-                float phase = (time * speed + ei * 0.23f + (float) s / segments) % 1.0f;
-                if (phase > dashRatio) continue;
-                double t0 = (double) s / segments;
-                double t1 = Math.min((double) (s + 1) / segments, t0 + dashRatio / segments);
-                Vec3 from = new Vec3(e[0] + dx * t0, e[1] + dy * t0, e[2] + dz * t0);
-                Vec3 to   = new Vec3(e[0] + dx * t1, e[1] + dy * t1, e[2] + dz * t1);
-                drawLine(ps, lines, from, to, r, g, b, a);
-            }
-        }
-    }
-
-    /** Draw a wireframe grid on the bottom face (holographic floor projection). */
-    private static void renderGridFloor(PoseStack ps, VertexConsumer lines, AABB box,
-                                         float r, float g, float b, float a) {
-        double w = box.maxX - box.minX;
-        double d = box.maxZ - box.minZ;
-        if (w < 0.5 || d < 0.5) return;
-        double spacing = Math.max(1.0, Math.min(w, d) / 4.0);
-        double y = box.minY - 0.005;
-        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
-            drawLine(ps, lines, new Vec3(x, y, box.minZ), new Vec3(x, y, box.maxZ), r, g, b, a);
-        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
-            drawLine(ps, lines, new Vec3(box.minX, y, z), new Vec3(box.maxX, y, z), r, g, b, a);
-    }
-
     /** Draw small diamond (octahedron) sparkles at all 8 corners with thick lines. */
     private static void renderDiamondCorners(PoseStack ps, VertexConsumer lines, AABB box,
                                                float r, float g, float b, float a, float size) {
@@ -922,30 +889,6 @@ public class ClientHandler {
                 }
             }
         }
-    }
-
-    /** Draw 4 bright vertical beams at the corners of the box. */
-    private static void renderVerticalBeams(PoseStack ps, VertexConsumer lines, AABB box,
-                                              float r, float g, float b, float a, float time) {
-        double[] xs = {box.minX, box.maxX};
-        double[] zs = {box.minZ, box.maxZ};
-        float pulse = (float)(Math.sin(time * 0.13) * 0.3 + 0.7);
-        float beamA = a * pulse;
-        for (double x : xs) {
-            for (double z : zs) {
-                drawThickLine(ps, lines,
-                        new Vec3(x, box.minY, z), new Vec3(x, box.maxY, z),
-                        Math.min(1f, r + 0.25f), Math.min(1f, g + 0.25f), Math.min(1f, b + 0.25f),
-                        beamA, 0.028f);
-            }
-        }
-        // Connect beams with a subtle horizontal ring at mid-height
-        float ringA = a * pulse * 0.45f;
-        double my = (box.minY + box.maxY) * 0.5;
-        drawThickLine(ps, lines, new Vec3(xs[0], my, zs[0]), new Vec3(xs[1], my, zs[0]), r, g, b, ringA, 0.012f);
-        drawThickLine(ps, lines, new Vec3(xs[1], my, zs[0]), new Vec3(xs[1], my, zs[1]), r, g, b, ringA, 0.012f);
-        drawThickLine(ps, lines, new Vec3(xs[1], my, zs[1]), new Vec3(xs[0], my, zs[1]), r, g, b, ringA, 0.012f);
-        drawThickLine(ps, lines, new Vec3(xs[0], my, zs[1]), new Vec3(xs[0], my, zs[0]), r, g, b, ringA, 0.012f);
     }
 
     /** Render dense wireframe grids on all 6 faces of the AABB — creates a translucent "glow cage" surface. */
@@ -1026,9 +969,159 @@ public class ClientHandler {
         return new Vec3(p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5);
     }
 
-    private static Direction dominantDir(BlockPos from, BlockPos to) {
-        int dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
-        if (Math.abs(dx) >= Math.abs(dz)) return dx >= 0 ? Direction.EAST : Direction.WEST;
-        return dz >= 0 ? Direction.SOUTH : Direction.NORTH;
+    // ═══════════════════════════════════════════════════════
+    //  新渲染系统 — 霓虹光效 / 全息填充 / 能量柱
+    // ═══════════════════════════════════════════════════════
+
+    /** Dense wireframe on all 6 faces — simulates a semi-transparent solid hologram. */
+    private static void renderHologramFaces(PoseStack ps, VertexConsumer lines, AABB box,
+                                             float r, float g, float b, float a, float spacing) {
+        // Top face
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.maxY, box.minZ), new Vec3(x, box.maxY, box.maxZ), r, g, b, a);
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, box.maxY, z), new Vec3(box.maxX, box.maxY, z), r, g, b, a);
+        // Bottom face
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.minY, box.minZ), new Vec3(x, box.minY, box.maxZ), r, g, b, a);
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, box.minY, z), new Vec3(box.maxX, box.minY, z), r, g, b, a);
+        // Front face (Z = minZ)
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.minY, box.minZ), new Vec3(x, box.maxY, box.minZ), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, y, box.minZ), new Vec3(box.maxX, y, box.minZ), r, g, b, a);
+        // Back face (Z = maxZ)
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.minY, box.maxZ), new Vec3(x, box.maxY, box.maxZ), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, y, box.maxZ), new Vec3(box.maxX, y, box.maxZ), r, g, b, a);
+        // Left face (X = minX)
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, box.minY, z), new Vec3(box.minX, box.maxY, z), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, y, box.minZ), new Vec3(box.minX, y, box.maxZ), r, g, b, a);
+        // Right face (X = maxX)
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.maxX, box.minY, z), new Vec3(box.maxX, box.maxY, z), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.maxX, y, box.minZ), new Vec3(box.maxX, y, box.maxZ), r, g, b, a);
     }
+
+    /** Multi-pass glow edges — 4 layers of increasing width / decreasing alpha for bloom. */
+    private static void renderNeonBox(PoseStack ps, VertexConsumer lines, AABB box,
+                                       float r, float g, float b, float a) {
+        float[][] layers = {
+            {a * 0.85f, 0.040f},
+            {a * 0.45f, 0.080f},
+            {a * 0.22f, 0.150f},
+            {a * 0.09f, 0.260f},
+        };
+        for (float[] layer : layers) {
+            renderBoxEdges(ps, lines, box, r, g, b, layer[0], layer[1]);
+        }
+    }
+
+    /** Draw all 12 edges of an AABB with thick lines. */
+    private static void renderBoxEdges(PoseStack ps, VertexConsumer lines, AABB box,
+                                        float r, float g, float b, float a, float thickness) {
+        // Bottom face
+        drawThickLine(ps, lines, new Vec3(box.minX, box.minY, box.minZ), new Vec3(box.maxX, box.minY, box.minZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.maxX, box.minY, box.minZ), new Vec3(box.maxX, box.minY, box.maxZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.maxX, box.minY, box.maxZ), new Vec3(box.minX, box.minY, box.maxZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.minX, box.minY, box.maxZ), new Vec3(box.minX, box.minY, box.minZ), r, g, b, a, thickness);
+        // Top face
+        drawThickLine(ps, lines, new Vec3(box.minX, box.maxY, box.minZ), new Vec3(box.maxX, box.maxY, box.minZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.maxX, box.maxY, box.minZ), new Vec3(box.maxX, box.maxY, box.maxZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.maxX, box.maxY, box.maxZ), new Vec3(box.minX, box.maxY, box.maxZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.minX, box.maxY, box.maxZ), new Vec3(box.minX, box.maxY, box.minZ), r, g, b, a, thickness);
+        // Verticals
+        drawThickLine(ps, lines, new Vec3(box.minX, box.minY, box.minZ), new Vec3(box.minX, box.maxY, box.minZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.maxX, box.minY, box.minZ), new Vec3(box.maxX, box.maxY, box.minZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.maxX, box.minY, box.maxZ), new Vec3(box.maxX, box.maxY, box.maxZ), r, g, b, a, thickness);
+        drawThickLine(ps, lines, new Vec3(box.minX, box.minY, box.maxZ), new Vec3(box.minX, box.maxY, box.maxZ), r, g, b, a, thickness);
+    }
+
+    /** Corner energy pillars with mid-height connecting ring. */
+    private static void renderEnergyPillars(PoseStack ps, VertexConsumer lines, AABB box,
+                                              float r, float g, float b, float a, float time) {
+        double[] xs = {box.minX, box.maxX};
+        double[] zs = {box.minZ, box.maxZ};
+        float pulse = (float)(Math.sin(time * 0.13) * 0.3 + 0.7);
+        float beamA = a * pulse;
+        for (double x : xs) {
+            for (double z : zs) {
+                drawThickLine(ps, lines,
+                        new Vec3(x, box.minY, z), new Vec3(x, box.maxY, z),
+                        Math.min(1f, r + 0.35f), Math.min(1f, g + 0.35f), Math.min(1f, b + 0.35f),
+                        beamA, 0.055f);
+            }
+        }
+        // Mid-height ring
+        float ringA = a * pulse * 0.70f;
+        double my = (box.minY + box.maxY) * 0.5;
+        drawThickLine(ps, lines, new Vec3(xs[0], my, zs[0]), new Vec3(xs[1], my, zs[0]), r, g, b, ringA, 0.025f);
+        drawThickLine(ps, lines, new Vec3(xs[1], my, zs[0]), new Vec3(xs[1], my, zs[1]), r, g, b, ringA, 0.025f);
+        drawThickLine(ps, lines, new Vec3(xs[1], my, zs[1]), new Vec3(xs[0], my, zs[1]), r, g, b, ringA, 0.025f);
+        drawThickLine(ps, lines, new Vec3(xs[0], my, zs[1]), new Vec3(xs[0], my, zs[0]), r, g, b, ringA, 0.025f);
+    }
+
+    /** Racing-light dashed border — faster, brighter dashes flowing around the box. */
+    private static void renderRacingBorder(PoseStack ps, VertexConsumer lines, AABB box,
+                                            float r, float g, float b, float a, float time, float speed) {
+        double[][] edges = {
+            {box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ},
+            {box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ},
+            {box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ},
+            {box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ},
+            {box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ},
+            {box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ},
+            {box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ},
+            {box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ},
+            {box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ},
+            {box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ},
+            {box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ},
+            {box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ},
+        };
+        int segments = 8;
+        float dashRatio = 0.40f;
+        for (int ei = 0; ei < edges.length; ei++) {
+            double[] e = edges[ei];
+            double dx = e[3] - e[0], dy = e[4] - e[1], dz = e[5] - e[2];
+            for (int s = 0; s < segments; s++) {
+                float phase = (time * speed + ei * 0.15f + (float) s / segments) % 1.0f;
+                if (phase > dashRatio) continue;
+                double t0 = (double) s / segments;
+                double t1 = Math.min((double) (s + 1) / segments, t0 + dashRatio / segments);
+                Vec3 from = new Vec3(e[0] + dx * t0, e[1] + dy * t0, e[2] + dz * t0);
+                Vec3 to   = new Vec3(e[0] + dx * t1, e[1] + dy * t1, e[2] + dz * t1);
+                // Thicker dash segments for visibility
+                drawThickLine(ps, lines, from, to, r, g, b, a, 0.030f);
+            }
+        }
+    }
+
+    /** 4 corners of a horizontal ring at the given Y. */
+    private static Vec3[] horizontalRingAt(AABB box, double y) {
+        return new Vec3[] {
+            new Vec3(box.minX, y, box.minZ),
+            new Vec3(box.maxX, y, box.minZ),
+            new Vec3(box.maxX, y, box.maxZ),
+            new Vec3(box.minX, y, box.maxZ),
+        };
+    }
+
+    /** Draw a circle in the XZ plane at (cx, y, cz) with radius r and numSegments. */
+    private static void renderRingXZ(PoseStack ps, VertexConsumer lines,
+                                      double cx, double y, double cz, double r, int segs,
+                                      float red, float green, float blue, float alpha, float thickness) {
+        for (int i = 0; i < segs; i++) {
+            double a0 = i * 2.0 * Math.PI / segs;
+            double a1 = (i + 1) * 2.0 * Math.PI / segs;
+            Vec3 from = new Vec3(cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r);
+            Vec3 to   = new Vec3(cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r);
+            drawThickLine(ps, lines, from, to, red, green, blue, alpha, thickness);
+        }
+    }
+
 }

@@ -1,16 +1,20 @@
 package com.liang.pathweaver.logic;
 
+import com.liang.pathweaver.PathWeaver;
 import com.liang.pathweaver.data.PlayerPathData;
 import com.liang.pathweaver.item.PathWeaverTool;
 import com.liang.pathweaver.registry.ModItems;
 import com.liang.pathweaver.undo.UndoManager;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.network.NetworkHooks;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,8 +36,23 @@ public class PathDataManager {
     @SubscribeEvent
     public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
+            // Check client mod version from handshake data.
+            // If versions mismatch the network channel won't work — reject early.
+            // Reject if client doesn't have PathWeaver at all.
+            // Version mismatch is caught by the network channel built-in check
+            // (packets silently dropped) + displayTest="MATCH_VERSION" red X.
+            var connData = NetworkHooks.getConnectionData(sp.connection.connection);
+            if (connData != null) {
+                List<String> clientMods = connData.getModList();
+                if (clientMods != null && !clientMods.contains(PathWeaver.MOD_ID)) {
+                    sp.connection.disconnect(Component.literal(
+                            "§c[PathWeaver] 客户端未安装此 Mod，拒绝连接"));
+                    return;
+                }
+            }
+
             UUID uuid = sp.getUUID();
-            DATA.remove(uuid);       // ensure clean state even if logout wasn't fired
+            DATA.remove(uuid);
             UndoManager.clear(uuid);
             PathWeaverTool.syncState(sp, get(uuid));
         }
