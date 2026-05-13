@@ -40,6 +40,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -187,8 +188,12 @@ public class ClientHandler {
                 if (leftClickConsumed) return;
                 leftClickConsumed = true;
                 ModMessages.CHANNEL.sendToServer(new C2SDeleteRegionPacket(event.getPos()));
+            } else {
+                // 框外方块：拦截破坏，手持工具时不破坏方块
+                event.setCanceled(true);
+                event.setUseBlock(net.minecraftforge.eventbus.api.Event.Result.DENY);
+                event.setUseItem(net.minecraftforge.eventbus.api.Event.Result.DENY);
             }
-            // 框外方块：不拦截，正常破坏
         }
     }
 
@@ -379,6 +384,7 @@ public class ClientHandler {
         int tileCount = 0;
 
         if (pathMode == PathMode.LINEAR) {
+            List<BezierUtil.BezierPoint> tiles = new ArrayList<>();
             for (int i = 0; i + 1 < pathPoints.size(); i++) {
                 BlockPos from = pathPoints.get(i), to = pathPoints.get(i + 1);
                 Direction dir = dominantDir(from, to);
@@ -386,30 +392,29 @@ public class ClientHandler {
                 double dz = to.getZ() - from.getZ();
                 double segLen = Math.sqrt(dx * dx + dz * dz);
                 if (segLen < 0.001) {
-                    renderTileBlocks(ps, lines, from, dir, pulse);
-                    tileCount++;
-                    continue;
+                    tiles.add(new BezierUtil.BezierPoint(from, dir));
+                } else {
+                    tiles.add(new BezierUtil.BezierPoint(from, dir));
+                    for (double dist = templateLength; dist < segLen; dist += templateLength) {
+                        double frac = dist / segLen;
+                        int x = (int) Math.round(from.getX() + dx * frac);
+                        int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
+                        int z = (int) Math.round(from.getZ() + dz * frac);
+                        tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
+                    }
                 }
-                renderTileBlocks(ps, lines, from, dir, pulse);
+                // 段间转角无需 wedge：B 由下段起点接管，宽路径靠 centerOrigin 自然衔接
+            }
+            for (BezierUtil.BezierPoint s : new LinkedHashSet<>(tiles)) {
+                renderTileBlocks(ps, lines, s.pos(), s.direction(), pulse);
                 tileCount++;
-                for (double dist = templateLength; dist < segLen; dist += templateLength) {
-                    double frac = dist / segLen;
-                    int x = (int) Math.round(from.getX() + dx * frac);
-                    int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
-                    int z = (int) Math.round(from.getZ() + dz * frac);
-                    renderTileBlocks(ps, lines, new BlockPos(x, y, z), dir, pulse);
-                    tileCount++;
-                }
             }
         } else {
-            for (int i = 0; i + 2 < pathPoints.size(); i += 2) {
-                List<BezierUtil.BezierPoint> samples = BezierUtil.sampleCurve(
-                        pathPoints.get(i), pathPoints.get(i + 1), pathPoints.get(i + 2),
-                        templateLength);
-                for (BezierUtil.BezierPoint s : samples) {
-                    renderTileBlocks(ps, lines, s.pos(), s.direction(), pulse);
-                    tileCount++;
-                }
+            List<BezierUtil.BezierPoint> samples =
+                    BezierUtil.sampleMultiSegmentCurve(pathPoints, templateLength);
+            for (BezierUtil.BezierPoint s : new LinkedHashSet<>(samples)) {
+                renderTileBlocks(ps, lines, s.pos(), s.direction(), pulse);
+                tileCount++;
             }
         }
         previewTileCount = tileCount;

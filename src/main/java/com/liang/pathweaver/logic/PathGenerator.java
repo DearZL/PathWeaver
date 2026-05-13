@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +35,7 @@ public class PathGenerator {
 
     private static void generateLinear(ServerLevel level, TemplateData template,
                                         List<BlockPos> points, List<UndoEntry> undo) {
+        List<BezierUtil.BezierPoint> tiles = new ArrayList<>();
         for (int i = 0; i + 1 < points.size(); i++) {
             BlockPos from = points.get(i);
             BlockPos to = points.get(i + 1);
@@ -42,28 +44,30 @@ public class PathGenerator {
             double dz = to.getZ() - from.getZ();
             double segLen = Math.sqrt(dx * dx + dz * dz);
             if (segLen < 0.001) {
-                placeTemplate(level, template, from, dir, undo);
-                continue;
+                tiles.add(new BezierUtil.BezierPoint(from, dir));
+            } else {
+                tiles.add(new BezierUtil.BezierPoint(from, dir));
+                for (double dist = template.length; dist < segLen; dist += template.length) {
+                    double frac = dist / segLen;
+                    int x = (int) Math.round(from.getX() + dx * frac);
+                    int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
+                    int z = (int) Math.round(from.getZ() + dz * frac);
+                    tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
+                }
             }
-            placeTemplate(level, template, from, dir, undo);
-            for (double dist = template.length; dist < segLen; dist += template.length) {
-                double frac = dist / segLen;
-                int x = (int) Math.round(from.getX() + dx * frac);
-                int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
-                int z = (int) Math.round(from.getZ() + dz * frac);
-                placeTemplate(level, template, new BlockPos(x, y, z), dir, undo);
-            }
+            // 段间转角：B 处由下一段循环起点接管。宽路径的入/出段在 B 附近已经
+            // 通过 centerOrigin 的 ⊥ 偏移自然衔接，无需额外补块（旧 wedge 会落到外角延伸处多放）。
+        }
+        for (BezierUtil.BezierPoint p : new LinkedHashSet<>(tiles)) {
+            placeTemplate(level, template, p.pos(), p.direction(), undo);
         }
     }
 
     private static void generateBezier(ServerLevel level, TemplateData template,
                                          List<BlockPos> points, List<UndoEntry> undo) {
-        for (int i = 0; i + 2 < points.size(); i += 2) {
-            BlockPos p0 = points.get(i), p1 = points.get(i + 1), p2 = points.get(i + 2);
-            List<BezierUtil.BezierPoint> samples = BezierUtil.sampleCurve(p0, p1, p2, template.length);
-            for (BezierUtil.BezierPoint sample : samples) {
-                placeTemplate(level, template, sample.pos(), sample.direction(), undo);
-            }
+        List<BezierUtil.BezierPoint> samples = BezierUtil.sampleMultiSegmentCurve(points, template.length);
+        for (BezierUtil.BezierPoint sample : new LinkedHashSet<>(samples)) {
+            placeTemplate(level, template, sample.pos(), sample.direction(), undo);
         }
     }
 
@@ -126,18 +130,30 @@ public class PathGenerator {
 
         int tileCount = 0;
         if (data.pathMode == PathMode.LINEAR) {
+            List<BezierUtil.BezierPoint> tiles = new ArrayList<>();
             for (int i = 0; i + 1 < points.size(); i++) {
                 BlockPos from = points.get(i), to = points.get(i + 1);
+                Direction dir = dominantDirection(from, to);
                 double dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
                 double segLen = Math.sqrt(dx * dx + dz * dz);
-                tileCount += Math.max(1, (int) Math.ceil(segLen / template.length - 1e-9));
+                if (segLen < 0.001) {
+                    tiles.add(new BezierUtil.BezierPoint(from, dir));
+                } else {
+                    tiles.add(new BezierUtil.BezierPoint(from, dir));
+                    for (double dist = template.length; dist < segLen; dist += template.length) {
+                        double frac = dist / segLen;
+                        int x = (int) Math.round(from.getX() + dx * frac);
+                        int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
+                        int z = (int) Math.round(from.getZ() + dz * frac);
+                        tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
+                    }
+                }
+                // 段间转角无需 wedge：见 generateLinear 同处注释
             }
+            tileCount = new LinkedHashSet<>(tiles).size();
         } else {
-            for (int i = 0; i + 2 < points.size(); i += 2) {
-                List<BezierUtil.BezierPoint> samples = BezierUtil.sampleCurve(
-                        points.get(i), points.get(i + 1), points.get(i + 2), template.length);
-                tileCount += samples.size();
-            }
+            tileCount = new LinkedHashSet<>(
+                    BezierUtil.sampleMultiSegmentCurve(points, template.length)).size();
         }
 
         final int total = tileCount;

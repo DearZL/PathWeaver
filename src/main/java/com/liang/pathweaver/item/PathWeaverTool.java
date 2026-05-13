@@ -46,6 +46,7 @@ public class PathWeaverTool extends Item {
         tooltip.add(Component.literal("§6▶ 标记路径点（模板确认后）"));
         tooltip.add(Component.literal("  §7左键方块 §f→ 添加路径点（上限256个）"));
         tooltip.add(Component.literal("  §7右键方块 §f→ 随时重新框选模板（旧模板保留至确认）"));
+        tooltip.add(Component.literal("  §7Shift+右键路径点 §f→ 移除该路径点"));
         tooltip.add(Component.literal("  §7Shift+滚轮 §f→ 切换 LINEAR / BEZIER 模式"));
         tooltip.add(Component.literal("§6▶ 生成路径"));
         tooltip.add(Component.literal("  §7Shift+左键方块 §f→ 生成（生存模式自动消耗材料）"));
@@ -65,6 +66,18 @@ public class PathWeaverTool extends Item {
         BlockPos clicked = ctx.getClickedPos();
 
         if (player.isShiftKeyDown()) {
+            // Shift+右键路径点 → 移除该路径点
+            if (!data.pathPoints.isEmpty()) {
+                int idx = data.pathPoints.indexOf(clicked);
+                if (idx >= 0) {
+                    data.pathPoints.remove(idx);
+                    player.sendSystemMessage(Component.literal(
+                            "§a[PathWeaver] 已移除路径点 #" + (idx + 1) + " " + fmtPos(clicked)
+                            + " | 剩余:" + data.pathPoints.size()));
+                    syncState(player, data);
+                    return InteractionResult.SUCCESS;
+                }
+            }
             if (data.hasRegions()) {
                 confirmTemplate(player, data, (ServerLevel) ctx.getLevel());
             }
