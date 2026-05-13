@@ -55,19 +55,6 @@ public class PathGenerator {
                     tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
                 }
             }
-            // 段间转角：左转时 centerOrigin 两向偏移均指向内角，模板自然交叠；
-            // 右转时两向偏移背离，外角出现缺口，需在 B 补一枚入段方向的 tile。
-            if (i + 2 < points.size()) {
-                Direction nextDir = dominantDirection(to, points.get(i + 2));
-                if (dir != nextDir) {
-                    int cross = dir.getStepX() * nextDir.getStepZ() - dir.getStepZ() * nextDir.getStepX();
-                    if (cross > 0) {
-                        int half = template.width / 2;
-                        BlockPos wedgeOrigin = to.relative(dir.getOpposite(), template.length - half - 1);
-                        tiles.add(new BezierUtil.BezierPoint(wedgeOrigin, dir));
-                    }
-                }
-            }
         }
         for (BezierUtil.BezierPoint p : new LinkedHashSet<>(tiles)) {
             placeTemplate(level, template, p.pos(), p.direction(), undo);
@@ -157,18 +144,6 @@ public class PathGenerator {
                         int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
                         int z = (int) Math.round(from.getZ() + dz * frac);
                         tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
-                    }
-                }
-                // 段间转角：右转时在 B 补一枚入段方向 tile（见 generateLinear 同处注释）
-                if (i + 2 < points.size()) {
-                    Direction nextDir = dominantDirection(to, points.get(i + 2));
-                    if (dir != nextDir) {
-                        int cross = dir.getStepX() * nextDir.getStepZ() - dir.getStepZ() * nextDir.getStepX();
-                        if (cross > 0) {
-                            int half = template.width / 2;
-                            BlockPos wedgeOrigin = to.relative(dir.getOpposite(), template.length - half - 1);
-                            tiles.add(new BezierUtil.BezierPoint(wedgeOrigin, dir));
-                        }
                     }
                 }
             }

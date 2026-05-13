@@ -455,8 +455,13 @@ public class ClientHandler {
             renderTilePreview(ps, lines, time);
         }
 
+        // 7. 路径点序号（全息浮空数字）
+        if (!pathPoints.isEmpty()) {
+            renderWaypointLabels(ps, src, time, mc);
+        }
+
         ps.popPose();
-        src.endBatch(RenderType.lines());
+        src.endBatch();
     }
 
     // ---- 渐变颜色计算（绿→黄→橙） ----
@@ -497,6 +502,57 @@ public class ClientHandler {
                 0.2f, 0.85f, 1f, beamAlpha, 0.018f);
     }
 
+    // ---- 路径点序号（全息浮空数字，面朝镜头，透墙可见） ----
+    private static void renderWaypointLabels(PoseStack ps, MultiBufferSource.BufferSource src,
+                                              float time, Minecraft mc) {
+        int n = pathPoints.size();
+        for (int i = 0; i < n; i++) {
+            BlockPos pos = pathPoints.get(i);
+            float phase = (pos.getX() * 1.3f + pos.getZ() * 0.9f) * 0.5f;
+            float pulse = (float) (Math.sin(time * 0.18 + phase) * 0.5 + 0.5);
+
+            // 位置：标记框上方 + 光柱顶端
+            double cx = pos.getX() + 0.5;
+            double cy = pos.getY() + 1.62 + pulse * 1.15;
+            double cz = pos.getZ() + 0.5;
+
+            // 颜色：金→琥珀→青渐变
+            float t = n > 1 ? (float) i / (float) (n - 1) : 0.5f;
+            float hue = 0.13f - t * 0.08f;  // gold(0.13) → warm amber(0.05)
+            float[] rgb = hsvToRgb(hue % 1f, 0.85f, 1.0f);
+            int color = (255 << 24)
+                    | ((int) (rgb[0] * 255) << 16)
+                    | ((int) (rgb[1] * 255) << 8)
+                    | (int) (rgb[2] * 255);
+
+            String label = String.valueOf(i + 1);
+            int textWidth = mc.font.width(label);
+
+            ps.pushPose();
+            ps.translate(cx, cy, cz);
+            // 面朝镜头
+            ps.mulPose(mc.gameRenderer.getMainCamera().rotation());
+            float scale = 0.028f + pulse * 0.010f;
+            ps.scale(-scale, -scale, scale);
+
+            // 半透明暗底增强可读性
+            int bgAlpha = (int) (40 + pulse * 60);
+            int bgColor = (bgAlpha << 24) | 0x000000;
+
+            mc.font.drawInBatch(
+                    net.minecraft.network.chat.Component.literal(label),
+                    -textWidth / 2f, 0f,
+                    color, true,
+                    ps.last().pose(),
+                    src,
+                    net.minecraft.client.gui.Font.DisplayMode.SEE_THROUGH,
+                    bgColor,
+                    0xF000F0  // fullbright
+            );
+            ps.popPose();
+        }
+    }
+
     // ---- 铺砖预览（脉冲透明度 + 逐方块着色） ----
     private static void renderTilePreview(PoseStack ps, VertexConsumer lines, float time) {
         float pulse = (float)(Math.sin(time * 0.12) * 0.35 + 0.65);
@@ -520,18 +576,6 @@ public class ClientHandler {
                         int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
                         int z = (int) Math.round(from.getZ() + dz * frac);
                         tiles.add(new BezierUtil.BezierPoint(new BlockPos(x, y, z), dir));
-                    }
-                }
-                // 段间转角：右转时在 B 补一枚入段方向 tile
-                if (i + 2 < pathPoints.size()) {
-                    Direction nextDir = dominantDir(to, pathPoints.get(i + 2));
-                    if (dir != nextDir) {
-                        int cross = dir.getStepX() * nextDir.getStepZ() - dir.getStepZ() * nextDir.getStepX();
-                        if (cross > 0) {
-                            int half = templateWidth / 2;
-                            BlockPos wedgeOrigin = to.relative(dir.getOpposite(), templateLength - half - 1);
-                            tiles.add(new BezierUtil.BezierPoint(wedgeOrigin, dir));
-                        }
                     }
                 }
             }
@@ -621,6 +665,7 @@ public class ClientHandler {
 
         GuiGraphics gui = event.getGuiGraphics();
         int sw = mc.getWindow().getGuiScaledWidth();
+        int sh = mc.getWindow().getGuiScaledHeight();
 
         // 构建显示行（小字，不加影）
         List<String> lines = new ArrayList<>();
@@ -641,10 +686,11 @@ public class ClientHandler {
             if (w > maxW) maxW = w;
         }
 
-        int x = sw - maxW - 6;
-        int y = 10;
         int lineH = 9;
         int totalH = lines.size() * lineH;
+        // 放在准星右侧，垂直居中
+        int x = sw / 2 + 12;
+        int y = sh / 2 - totalH / 2;
         // 半透明黑底
         gui.fill(x - 2, y - 2, x + maxW + 2, y + totalH + 1, 0x80000000);
         for (String line : lines) {
