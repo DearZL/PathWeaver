@@ -26,10 +26,13 @@ public class ModMessages {
         CHANNEL.registerMessage(id++, C2SSwitchModePacket.class,
                 C2SSwitchModePacket::encode, C2SSwitchModePacket::decode, C2SSwitchModePacket::handle);
 
-        CHANNEL.registerMessage(id++, C2SUndoPacket.class,
-                C2SUndoPacket::encode, C2SUndoPacket::decode, C2SUndoPacket::handle);
-
         CHANNEL.registerMessage(id++, S2CUpdateStatePacket.class,
                 S2CUpdateStatePacket::encode, S2CUpdateStatePacket::decode, S2CUpdateStatePacket::handle);
+
+        CHANNEL.registerMessage(id++, C2SDeleteRegionPacket.class,
+                C2SDeleteRegionPacket::encode, C2SDeleteRegionPacket::decode, C2SDeleteRegionPacket::handle);
+
+        CHANNEL.registerMessage(id++, C2SStartCornerPacket.class,
+                C2SStartCornerPacket::encode, C2SStartCornerPacket::decode, C2SStartCornerPacket::handle);
     }
 }

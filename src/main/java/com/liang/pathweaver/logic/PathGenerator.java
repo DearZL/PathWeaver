@@ -45,8 +45,9 @@ public class PathGenerator {
                 placeTemplate(level, template, from, dir, undo);
                 continue;
             }
-            for (double dist = 0; dist <= segLen + 0.001; dist += template.length) {
-                double frac = Math.min(dist / segLen, 1.0);
+            placeTemplate(level, template, from, dir, undo);
+            for (double dist = template.length; dist < segLen; dist += template.length) {
+                double frac = dist / segLen;
                 int x = (int) Math.round(from.getX() + dx * frac);
                 int y = (int) Math.round(from.getY() + (to.getY() - from.getY()) * frac);
                 int z = (int) Math.round(from.getZ() + dz * frac);
@@ -129,7 +130,7 @@ public class PathGenerator {
                 BlockPos from = points.get(i), to = points.get(i + 1);
                 double dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
                 double segLen = Math.sqrt(dx * dx + dz * dz);
-                tileCount += Math.max(1, (int) Math.ceil((segLen + 0.001) / template.length));
+                tileCount += Math.max(1, (int) Math.ceil(segLen / template.length - 1e-9));
             }
         } else {
             for (int i = 0; i + 2 < points.size(); i += 2) {

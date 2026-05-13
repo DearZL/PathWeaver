@@ -40,6 +40,20 @@ public class C2SMarkPathPointPacket {
                 return;
             }
 
+            if (!data.pathPoints.isEmpty()) {
+                BlockPos prev = data.pathPoints.get(data.pathPoints.size() - 1);
+                double dx = pkt.pos.getX() - prev.getX();
+                double dz = pkt.pos.getZ() - prev.getZ();
+                double distXZ = Math.sqrt(dx * dx + dz * dz);
+                if (distXZ < data.template.length) {
+                    player.sendSystemMessage(Component.literal(
+                            "§c[PathWeaver] 路径点间距过近！投影距离 "
+                            + String.format("%.1f", distXZ) + " < 模板长度 "
+                            + data.template.length + "，会产生重叠。"));
+                    return;
+                }
+            }
+
             data.pathPoints.add(pkt.pos);
             int n = data.pathPoints.size();
             String modeHint = data.pathMode == com.liang.pathweaver.data.PathMode.BEZIER

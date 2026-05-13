@@ -2,6 +2,7 @@ package com.liang.pathweaver.logic;
 
 import com.liang.pathweaver.data.PlayerPathData;
 import com.liang.pathweaver.item.PathWeaverTool;
+import com.liang.pathweaver.undo.UndoManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -22,13 +23,17 @@ public class PathDataManager {
     @SubscribeEvent
     public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
-            // 进入游戏时推送空状态，确保客户端显示干净
-            PathWeaverTool.syncState(sp, get(sp.getUUID()));
+            UUID uuid = sp.getUUID();
+            DATA.remove(uuid);       // ensure clean state even if logout wasn't fired
+            UndoManager.clear(uuid);
+            PathWeaverTool.syncState(sp, get(uuid));
         }
     }
 
     @SubscribeEvent
     public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
-        DATA.remove(event.getEntity().getUUID());
+        UUID uuid = event.getEntity().getUUID();
+        UndoManager.clear(uuid);
+        DATA.remove(uuid);
     }
 }
