@@ -42,7 +42,6 @@ public class TemplateData {
     public static BlockPos localToWorld(int lx, int ly, int lz, BlockPos origin, Direction pathDir) {
         int ox = origin.getX(), oy = origin.getY(), oz = origin.getZ();
         return switch (pathDir) {
-            case NORTH -> new BlockPos(ox + lx, oy + ly, oz - lz);
             case SOUTH -> new BlockPos(ox - lx, oy + ly, oz + lz);
             case EAST  -> new BlockPos(ox + lz, oy + ly, oz + lx);
             case WEST  -> new BlockPos(ox - lz, oy + ly, oz - lx);
@@ -63,7 +62,6 @@ public class TemplateData {
 
     private static int horizontalIndex(Direction d) {
         return switch (d) {
-            case NORTH -> 0;
             case EAST  -> 1;
             case SOUTH -> 2;
             case WEST  -> 3;

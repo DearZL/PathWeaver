@@ -46,11 +46,11 @@ public class C2SGeneratePathPacket {
             if (!MaterialChecker.checkAndDeduct(player, required)) return;
 
             List<UndoEntry> undo = PathGenerator.generate(player.serverLevel(), data);
-            UndoManager.push(player.getUUID(), undo);
+            UndoManager.push(player.getUUID(), undo, required);
 
             data.clearPathPoints();
             player.sendSystemMessage(Component.literal(
-                    "§a[PathWeaver] 生成完成！共放置 " + undo.size() + " 个方块。Shift+右键可撤销。"));
+                    "§a[PathWeaver] 生成完成！共放置 " + undo.size() + " 个方块。使用 /pathweaver undo generate 可撤销。"));
 
             PathWeaverTool.syncState(player, data);
         });
