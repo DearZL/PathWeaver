@@ -345,8 +345,8 @@ public class ClientHandler {
 
         VertexConsumer lines = src.getBuffer(RenderType.lines());
 
-        // 1. 已完成的框选区域（五层虚线光晕 + 角柱 + 全息地板 + 双粗扫描线 + 钻石角）
-        float regPulse = (float)(Math.sin(time * 0.12) * 0.4 + 0.6); // 0.2→1.0
+        // 1. 已完成的框选区域 — 体积光雾笼 + 扫描面 + 角柱 + 扫描线 + 角点标记
+        float regPulse = (float)(Math.sin(time * 0.12) * 0.4 + 0.6);
         for (int i = 0; i < regions.size(); i++) {
             float[] c = REGION_COLORS[i % REGION_COLORS.length];
             BlockPos[] r = regions.get(i);
@@ -355,42 +355,43 @@ public class ClientHandler {
             int minZ = Math.min(r[0].getZ(), r[1].getZ()), maxZ = Math.max(r[0].getZ(), r[1].getZ());
             AABB box = new AABB(minX, minY, minZ, maxX + 1, maxY + 1, maxZ + 1);
 
-            // 全息网格地板
-            renderGridFloor(ps, lines, box, c[0], c[1], c[2], regPulse * 0.22f);
+            // —— 体积光雾笼：5 层半透明网格面，从内核向外扩散形成雾化光芒 ——
+            float auraPulse = (float)(Math.sin(time * 0.09 + i * 0.8f) * 0.25 + 0.75);
+            renderGlowFaces(ps, lines, box,                   c[0], c[1], c[2], regPulse * auraPulse * 0.18f, 0.45f);
+            renderGlowFaces(ps, lines, box.inflate(0.035),    c[0], c[1], c[2], regPulse * auraPulse * 0.12f, 0.55f);
+            renderGlowFaces(ps, lines, box.inflate(0.08),     c[0], c[1], c[2], regPulse * auraPulse * 0.07f, 0.70f);
+            renderGlowFaces(ps, lines, box.inflate(0.15),     c[0], c[1], c[2], regPulse * auraPulse * 0.04f, 0.90f);
+            renderGlowFaces(ps, lines, box.inflate(0.26),     c[0], c[1], c[2], regPulse * auraPulse * 0.018f, 1.20f);
 
-            // 五层发光（流动虚线，紧密间隔模拟粗线 + 外层光晕衰减）
-            renderDashedBox(ps, lines, box,                   c[0], c[1], c[2], regPulse,       time, 0.62f + i * 0.10f);
-            renderDashedBox(ps, lines, box.inflate(0.010),    c[0], c[1], c[2], regPulse * 0.70f, time, 0.68f + i * 0.10f);
-            renderDashedBox(ps, lines, box.inflate(0.022),    c[0], c[1], c[2], regPulse * 0.45f, time, 0.75f + i * 0.10f);
-            renderDashedBox(ps, lines, box.inflate(0.042),    c[0], c[1], c[2], regPulse * 0.25f, time, 0.83f + i * 0.10f);
-            renderDashedBox(ps, lines, box.inflate(0.072),    c[0], c[1], c[2], regPulse * 0.11f, time, 0.92f + i * 0.10f);
+            // —— 正交双垂直扫描面（X/Z 方向各一，交错扫过整个体积） ——
+            renderVerticalScanPlane(ps, lines, box, c[0], c[1], c[2], regPulse * 0.18f, time, 0);
+            renderVerticalScanPlane(ps, lines, box, c[0], c[1], c[2], regPulse * 0.18f, time, 1);
 
-            // 四角光束柱 + 中腰连接环
-            renderVerticalBeams(ps, lines, box, c[0], c[1], c[2], regPulse * 0.72f, time);
+            // —— 双横向扫描线 ——
+            float sa = 0.28f + regPulse * 0.22f;
+            for (float phase : new float[]{0f, (float) Math.PI}) {
+                double scanY = box.minY + (box.maxY - box.minY) * ((float)(Math.sin(time * 0.07 + i * 1.4f + phase) * 0.5 + 0.5));
+                drawThickLine(ps, lines, new Vec3(box.minX, scanY, box.minZ), new Vec3(box.maxX, scanY, box.minZ), c[0], c[1], c[2], sa, 0.028f);
+                drawThickLine(ps, lines, new Vec3(box.maxX, scanY, box.minZ), new Vec3(box.maxX, scanY, box.maxZ), c[0], c[1], c[2], sa, 0.028f);
+                drawThickLine(ps, lines, new Vec3(box.maxX, scanY, box.maxZ), new Vec3(box.minX, scanY, box.maxZ), c[0], c[1], c[2], sa, 0.028f);
+                drawThickLine(ps, lines, new Vec3(box.minX, scanY, box.maxZ), new Vec3(box.minX, scanY, box.minZ), c[0], c[1], c[2], sa, 0.028f);
+            }
 
-            // 8角粗括号标记
+            // —— 四角光束柱 + 中腰连接环 ——
+            renderVerticalBeams(ps, lines, box, c[0], c[1], c[2], regPulse * 0.65f, time);
+
+            // —— 边缘锐利轮廓线（在最外层勾勒清晰边界） ——
+            renderDashedBox(ps, lines, box.inflate(0.005), c[0], c[1], c[2], regPulse * 0.55f, time, 0.90f + i * 0.10f);
+
+            // —— 8 角括号 + 钻石 ——
             float bLen = (float)Math.max(0.18, Math.min(0.5,
                     Math.min(maxX - minX + 1, Math.min(maxY - minY + 1, maxZ - minZ + 1)) * 0.22));
             bLen += (float)(Math.sin(time * 0.2 + i * 1.1f) * 0.04);
             renderCornerBrackets(ps, lines, box, c[0], c[1], c[2], 1f, bLen);
+            float dSize = 0.20f + regPulse * 0.10f;
+            renderDiamondCorners(ps, lines, box, c[0], c[1], c[2], regPulse * 0.72f, dSize);
 
-            // 角点钻石标记（更大、脉冲）
-            float dSize = 0.18f + regPulse * 0.10f;
-            renderDiamondCorners(ps, lines, box, c[0], c[1], c[2], regPulse * 0.70f, dSize);
-
-            // 双粗横向扫描线（相位差 π，交错上下扫描）
-            float scanT1 = (float)(Math.sin(time * 0.07 + i * 1.4f) * 0.5 + 0.5);
-            float scanT2 = (float)(Math.sin(time * 0.07 + i * 1.4f + Math.PI) * 0.5 + 0.5);
-            float sa = 0.30f + regPulse * 0.25f;
-            for (float scanT : new float[]{scanT1, scanT2}) {
-                double scanY = box.minY + (box.maxY - box.minY) * scanT;
-                drawThickLine(ps, lines, new Vec3(box.minX, scanY, box.minZ), new Vec3(box.maxX, scanY, box.minZ), c[0], c[1], c[2], sa, 0.025f);
-                drawThickLine(ps, lines, new Vec3(box.maxX, scanY, box.minZ), new Vec3(box.maxX, scanY, box.maxZ), c[0], c[1], c[2], sa, 0.025f);
-                drawThickLine(ps, lines, new Vec3(box.maxX, scanY, box.maxZ), new Vec3(box.minX, scanY, box.maxZ), c[0], c[1], c[2], sa, 0.025f);
-                drawThickLine(ps, lines, new Vec3(box.minX, scanY, box.maxZ), new Vec3(box.minX, scanY, box.minZ), c[0], c[1], c[2], sa, 0.025f);
-            }
-
-            // 角点十字标记
+            // —— 角点十字 ——
             renderCrossMarker(ps, lines, r[0], time, c[0], c[1], c[2]);
             renderCrossMarker(ps, lines, r[1], time, c[0], c[1], c[2]);
         }
@@ -405,7 +406,7 @@ public class ClientHandler {
             drawThickLine(ps, lines, new Vec3(px, py - sz, pz), new Vec3(px, py + sz, pz), 1f, 1f, 0.35f, 0.25f + gp * 0.35f, 0.022f);
             drawThickLine(ps, lines, new Vec3(px, py, pz - sz), new Vec3(px, py, pz + sz), 1f, 1f, 0.35f, 0.25f + gp * 0.35f, 0.022f);
 
-            // 3. 动态预览框：彩虹渐变 + 粗虚线框 + 角柱 + 网格地板 + 钻石角
+            // 3. 动态预览框 — 简洁彩虹轮廓 + 半透明表面 + 角括号
             if (mc.hitResult instanceof BlockHitResult bhr) {
                 BlockPos target = bhr.getBlockPos();
                 int mnX = Math.min(pendingCorner.getX(), target.getX());
@@ -416,23 +417,18 @@ public class ClientHandler {
                 int mxZ = Math.max(pendingCorner.getZ(), target.getZ());
                 AABB prev = new AABB(mnX, mnY, mnZ, mxX + 1, mxY + 1, mxZ + 1);
 
-                // 彩虹色循环 (HSV → RGB)
                 float hue = (time * 0.018f) % 1.0f;
                 float[] rc = hsvToRgb(hue, 0.50f, 1.0f);
                 float pa = (float)(Math.sin(time * 0.25) * 0.15 + 0.35);
 
-                // 全息网格地板
-                renderGridFloor(ps, lines, prev, rc[0], rc[1], rc[2], pa * 0.18f);
-                // 四角光束柱
-                renderVerticalBeams(ps, lines, prev, rc[0], rc[1], rc[2], pa * 0.55f, time);
-                // 三层粗虚线框（紧密 → 扩散光晕）
-                renderDashedBox(ps, lines, prev, rc[0], rc[1], rc[2], pa, time, 1.3f);
-                renderDashedBox(ps, lines, prev.inflate(0.012), rc[0], rc[1], rc[2], pa * 0.55f, time, 1.45f);
-                renderDashedBox(ps, lines, prev.inflate(0.035), rc[0], rc[1], rc[2], pa * 0.22f, time, 1.65f);
-                // 粗角括号
-                renderCornerBrackets(ps, lines, prev, rc[0], rc[1], rc[2], pa * 1.6f, 0.30f);
-                // 钻石角点
-                renderDiamondCorners(ps, lines, prev, rc[0], rc[1], rc[2], pa * 0.80f, 0.20f);
+                // 单层半透明表面
+                renderGlowFaces(ps, lines, prev, rc[0], rc[1], rc[2], pa * 0.16f, 0.55f);
+                // 外层微光晕
+                renderGlowFaces(ps, lines, prev.inflate(0.04), rc[0], rc[1], rc[2], pa * 0.08f, 0.75f);
+                // 锐利轮廓虚线
+                renderDashedBox(ps, lines, prev.inflate(0.005), rc[0], rc[1], rc[2], pa * 0.50f, time, 1.4f);
+                // 8角括号
+                renderCornerBrackets(ps, lines, prev, rc[0], rc[1], rc[2], pa * 1.4f, 0.25f);
             }
         }
 
@@ -571,7 +567,7 @@ public class ClientHandler {
         };
         int ox = centered.getX(), oy = centered.getY(), oz = centered.getZ();
 
-        // Faint bounding box (shows overall shape even when all-air or data not yet received)
+        // Faint bounding box with glow face for overall shape
         AABB bbox = switch (pathDir) {
             case SOUTH -> new AABB(ox - templateWidth + 1, oy, oz,
                     ox + 1, oy + templateHeight, oz + templateLength);
@@ -582,9 +578,9 @@ public class ClientHandler {
             default    -> new AABB(ox, oy, oz - templateLength + 1,
                     ox + templateWidth, oy + templateHeight, oz + 1);
         };
-        renderBox(ps, lines, bbox.inflate(0.02), 0.5f, 0.5f, 0.5f, pulse * 0.18f);
+        renderGlowFaces(ps, lines, bbox, 0.4f, 0.4f, 0.4f, pulse * 0.14f, 0.55f);
 
-        // Per-block colored boxes (mirrors TemplateData.localToWorld)
+        // Per-block colored outlines (mirrors TemplateData.localToWorld)
         for (int[] bd : templateBlockData) {
             int lx = bd[0], ly = bd[1], lz = bd[2], typeIdx = bd[3];
             int wx = switch (pathDir) {
@@ -602,7 +598,7 @@ public class ClientHandler {
             int wy = oy + ly;
             float[] c = BLOCK_TYPE_COLORS[typeIdx % BLOCK_TYPE_COLORS.length];
             AABB blockBox = new AABB(wx, wy, wz, wx + 1, wy + 1, wz + 1);
-            renderBox(ps, lines, blockBox.inflate(0.02), c[0], c[1], c[2], pulse * 0.88f);
+            renderBox(ps, lines, blockBox.inflate(0.02), c[0], c[1], c[2], pulse * 0.85f);
         }
     }
 
@@ -904,6 +900,61 @@ public class ClientHandler {
         drawThickLine(ps, lines, new Vec3(xs[1], my, zs[0]), new Vec3(xs[1], my, zs[1]), r, g, b, ringA, 0.012f);
         drawThickLine(ps, lines, new Vec3(xs[1], my, zs[1]), new Vec3(xs[0], my, zs[1]), r, g, b, ringA, 0.012f);
         drawThickLine(ps, lines, new Vec3(xs[0], my, zs[1]), new Vec3(xs[0], my, zs[0]), r, g, b, ringA, 0.012f);
+    }
+
+    /** Render dense wireframe grids on all 6 faces of the AABB — creates a translucent "glow cage" surface. */
+    private static void renderGlowFaces(PoseStack ps, VertexConsumer lines, AABB box,
+                                         float r, float g, float b, float a, float spacing) {
+        // Top face (Y = maxY, XZ plane)
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.maxY, box.minZ), new Vec3(x, box.maxY, box.maxZ), r, g, b, a);
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, box.maxY, z), new Vec3(box.maxX, box.maxY, z), r, g, b, a);
+        // Bottom face
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.minY, box.minZ), new Vec3(x, box.minY, box.maxZ), r, g, b, a);
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, box.minY, z), new Vec3(box.maxX, box.minY, z), r, g, b, a);
+        // North face (Z = minZ, XY plane)
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.minY, box.minZ), new Vec3(x, box.maxY, box.minZ), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, y, box.minZ), new Vec3(box.maxX, y, box.minZ), r, g, b, a);
+        // South face
+        for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+            drawLine(ps, lines, new Vec3(x, box.minY, box.maxZ), new Vec3(x, box.maxY, box.maxZ), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, y, box.maxZ), new Vec3(box.maxX, y, box.maxZ), r, g, b, a);
+        // West face (X = minX, ZY plane)
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, box.minY, z), new Vec3(box.minX, box.maxY, z), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.minX, y, box.minZ), new Vec3(box.minX, y, box.maxZ), r, g, b, a);
+        // East face
+        for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+            drawLine(ps, lines, new Vec3(box.maxX, box.minY, z), new Vec3(box.maxX, box.maxY, z), r, g, b, a);
+        for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+            drawLine(ps, lines, new Vec3(box.maxX, y, box.minZ), new Vec3(box.maxX, y, box.maxZ), r, g, b, a);
+    }
+
+    /** Vertical scanning plane that sweeps through the volume in X or Z direction. */
+    private static void renderVerticalScanPlane(PoseStack ps, VertexConsumer lines, AABB box,
+                                                  float r, float g, float b, float a, float time, int axis) {
+        float scanT = (float)(Math.sin(time * 0.045 + axis * 1.5f) * 0.5 + 0.5);
+        float spacing = 0.50f;
+        if (axis == 0) {
+            double sx = box.minX + (box.maxX - box.minX) * scanT;
+            for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+                drawLine(ps, lines, new Vec3(sx, y, box.minZ), new Vec3(sx, y, box.maxZ), r, g, b, a);
+            for (double z = box.minZ; z <= box.maxZ + 0.001; z += spacing)
+                drawLine(ps, lines, new Vec3(sx, box.minY, z), new Vec3(sx, box.maxY, z), r, g, b, a);
+        } else {
+            double sz = box.minZ + (box.maxZ - box.minZ) * scanT;
+            for (double y = box.minY; y <= box.maxY + 0.001; y += spacing)
+                drawLine(ps, lines, new Vec3(box.minX, y, sz), new Vec3(box.maxX, y, sz), r, g, b, a);
+            for (double x = box.minX; x <= box.maxX + 0.001; x += spacing)
+                drawLine(ps, lines, new Vec3(x, box.minY, sz), new Vec3(x, box.maxY, sz), r, g, b, a);
+        }
     }
 
     /** Convert HSV to RGB, returns float[3] with values in 0..1. */
