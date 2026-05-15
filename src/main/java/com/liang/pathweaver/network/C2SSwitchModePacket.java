@@ -3,6 +3,7 @@ package com.liang.pathweaver.network;
 import com.liang.pathweaver.data.PlayerPathData;
 import com.liang.pathweaver.item.PathWeaverTool;
 import com.liang.pathweaver.logic.PathDataManager;
+import com.liang.pathweaver.logic.ServerActionGuard;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -22,6 +23,7 @@ public class C2SSwitchModePacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
+            if (!ServerActionGuard.holdsTool(player)) return;
             PlayerPathData data = PathDataManager.get(player.getUUID());
             data.pathMode = data.pathMode.next();
             data.pathPoints.clear();

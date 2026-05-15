@@ -3,6 +3,7 @@ package com.liang.pathweaver.network;
 import com.liang.pathweaver.data.PlayerPathData;
 import com.liang.pathweaver.item.PathWeaverTool;
 import com.liang.pathweaver.logic.PathDataManager;
+import com.liang.pathweaver.logic.ServerActionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -28,10 +29,15 @@ public class C2SMarkPathPointPacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
+            if (!ServerActionGuard.canUseToolOn(player, pkt.pos)) return;
             PlayerPathData data = PathDataManager.get(player.getUUID());
 
             if (!data.hasTemplate()) {
                 player.sendSystemMessage(Component.literal("§c[PathWeaver] 请先确认模板（右键选择角点, Shift+右键确认）！"));
+                return;
+            }
+            if (data.hasRegions() || data.hasPendingCorner()) {
+                player.sendSystemMessage(Component.literal("§c[PathWeaver] 请先完成或取消当前模板框选。"));
                 return;
             }
 

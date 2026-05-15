@@ -59,8 +59,11 @@ public class ClientHandler {
     // Template block data for per-block shape preview
     private static final List<String> templateBlockTypeIds = new ArrayList<>();
     private static final List<int[]>  templateBlockData    = new ArrayList<>();
+    private static final List<String> templateMaterialItemIds = new ArrayList<>();
+    private static final List<Integer> templateMaterialCountsPerTile = new ArrayList<>();
     // Tile count computed each frame during preview render (used by HUD)
     private static int previewTileCount = 0;
+    private static long lastModeSwitchMs = 0L;
 
     // 各框颜色（按索引循环）
     private static final float[][] BLOCK_TYPE_COLORS = {
@@ -101,6 +104,11 @@ public class ClientHandler {
         templateBlockTypeIds.addAll(pkt.templateBlockTypeIds);
         templateBlockData.clear();
         templateBlockData.addAll(pkt.templateBlockData);
+        templateMaterialItemIds.clear();
+        templateMaterialItemIds.addAll(pkt.templateMaterialItemIds);
+        templateMaterialCountsPerTile.clear();
+        templateMaterialCountsPerTile.addAll(pkt.templateMaterialCountsPerTile);
+        previewTileCount = 0;
     }
 
     // ---- 退出游戏时清空客户端状态 ----
@@ -117,8 +125,11 @@ public class ClientHandler {
         pathMode = PathMode.LINEAR;
         templateBlockTypeIds.clear();
         templateBlockData.clear();
+        templateMaterialItemIds.clear();
+        templateMaterialCountsPerTile.clear();
         previewTileCount = 0;
         leftClickConsumed = false;
+        lastModeSwitchMs = 0L;
     }
 
     // ---- 左键防抖 ----
@@ -205,6 +216,12 @@ public class ClientHandler {
         if (mc.player == null) return;
         if (!mc.player.getMainHandItem().is(ModItems.PATH_WEAVER_TOOL.get())) return;
         if (!mc.player.isShiftKeyDown()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastModeSwitchMs < 180L) {
+            event.setCanceled(true);
+            return;
+        }
+        lastModeSwitchMs = now;
         event.setCanceled(true);
         ModMessages.CHANNEL.sendToServer(new C2SSwitchModePacket());
     }
@@ -669,14 +686,7 @@ public class ClientHandler {
         if (!mc.player.getMainHandItem().is(ModItems.PATH_WEAVER_TOOL.get())) return;
         // 仅在纯路径点模式且有路径点时显示
         if (!hasTemplate || pathPoints.isEmpty() || !regions.isEmpty()) return;
-        if (templateBlockData.isEmpty()) return;
-
-        // 统计每种方块类型在一个 tile 中的数量
-        Map<Integer, Integer> countPerType = new LinkedHashMap<>();
-        for (int[] bd : templateBlockData) {
-            countPerType.merge(bd[3], 1, Integer::sum);
-        }
-        if (countPerType.isEmpty()) return;
+        if (templateMaterialItemIds.isEmpty()) return;
 
         GuiGraphics gui = event.getGuiGraphics();
         int sw = mc.getWindow().getGuiScaledWidth();
@@ -685,12 +695,9 @@ public class ClientHandler {
         // 构建显示行（小字，不加影）
         List<String> lines = new ArrayList<>();
         lines.add("§7[需消耗]");
-        for (Map.Entry<Integer, Integer> e : countPerType.entrySet()) {
-            int typeIdx = e.getKey();
-            int total   = e.getValue() * previewTileCount;
-            String registryId = typeIdx < templateBlockTypeIds.size()
-                    ? templateBlockTypeIds.get(typeIdx) : "?";
-            String displayName = getBlockDisplayName(registryId);
+        for (int i = 0; i < templateMaterialItemIds.size(); i++) {
+            int total = templateMaterialCountsPerTile.get(i) * previewTileCount;
+            String displayName = getItemDisplayName(templateMaterialItemIds.get(i));
             lines.add("§f" + displayName + " §ex" + total);
         }
 
@@ -714,12 +721,12 @@ public class ClientHandler {
         }
     }
 
-    private static String getBlockDisplayName(String registryId) {
+    private static String getItemDisplayName(String registryId) {
         try {
             ResourceLocation rl = ResourceLocation.tryParse(registryId);
             if (rl != null) {
-                var block = ForgeRegistries.BLOCKS.getValue(rl);
-                if (block != null) return block.getName().getString();
+                var item = ForgeRegistries.ITEMS.getValue(rl);
+                if (item != null) return item.getDescription().getString();
             }
         } catch (Exception ignored) {}
         // 回退：去掉命名空间，下划线换空格

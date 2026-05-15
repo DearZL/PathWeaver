@@ -3,6 +3,7 @@ package com.liang.pathweaver.network;
 import com.liang.pathweaver.data.PlayerPathData;
 import com.liang.pathweaver.item.PathWeaverTool;
 import com.liang.pathweaver.logic.PathDataManager;
+import com.liang.pathweaver.logic.ServerActionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -28,13 +29,13 @@ public class C2SDeleteRegionPacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
+            if (!ServerActionGuard.canUseToolOn(player, pkt.pos)) return;
             PlayerPathData data = PathDataManager.get(player.getUUID());
             // allow deletion only in selection mode (no template, or template but re-selecting)
             if (data.hasTemplate() && !data.hasRegions()) return;
             int idx = data.findSmallestRegionContaining(pkt.pos);
             if (idx >= 0) {
                 data.regions.remove(idx);
-                data.clearPathPoints();
                 player.sendSystemMessage(Component.literal(
                         "§e[PathWeaver] 已删除框选区域 #" + (idx + 1)));
                 PathWeaverTool.syncState(player, data);

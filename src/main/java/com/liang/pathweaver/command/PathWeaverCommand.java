@@ -25,12 +25,28 @@ public class PathWeaverCommand {
         dispatcher.register(
             Commands.literal("pathweaver").requires(source -> source.hasPermission(0))
                 .then(Commands.literal("undo")
+                    .executes(PathWeaverCommand::smartUndo)
                     .then(Commands.literal("corner").executes(PathWeaverCommand::undoCorner))
                     .then(Commands.literal("region").executes(PathWeaverCommand::undoRegion))
                     .then(Commands.literal("point").executes(PathWeaverCommand::undoPoint))
                     .then(Commands.literal("generate").executes(PathWeaverCommand::undoGenerate))
                 )
         );
+    }
+
+    private static int smartUndo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        PlayerPathData data = PathDataManager.get(player.getUUID());
+        if (data.hasPendingCorner()) {
+            return undoCorner(ctx);
+        }
+        if (data.hasRegions()) {
+            return undoRegion(ctx);
+        }
+        if (data.hasTemplate() && !data.pathPoints.isEmpty()) {
+            return undoPoint(ctx);
+        }
+        return undoGenerate(ctx);
     }
 
     private static int undoCorner(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -85,9 +101,7 @@ public class PathWeaverCommand {
         if (ok) {
             ctx.getSource().sendSuccess(() -> Component.literal("已撤销上一次生成。"), false);
             return 1;
-        } else {
-            ctx.getSource().sendFailure(Component.literal("没有可撤销的生成操作。"));
-            return 0;
         }
+        return 0;
     }
 }

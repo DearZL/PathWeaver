@@ -3,10 +3,13 @@ package com.liang.pathweaver.network;
 import com.liang.pathweaver.client.ClientHandler;
 import com.liang.pathweaver.data.PathMode;
 import com.liang.pathweaver.data.PlayerPathData;
+import com.liang.pathweaver.data.TemplateBlockData;
+import com.liang.pathweaver.logic.TemplateMaterialHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
@@ -32,13 +35,16 @@ public class S2CUpdateStatePacket {
     // Template block data for shape preview: each int[] = {lx, ly, lz, typeIndex}
     public final List<String> templateBlockTypeIds;  // unique block registry names
     public final List<int[]>  templateBlockData;     // one entry per non-air template block
+    public final List<String> templateMaterialItemIds;
+    public final List<Integer> templateMaterialCountsPerTile;
 
     public S2CUpdateStatePacket(BlockPos pendingCorner, List<BlockPos[]> regions,
                                 boolean hasTemplate,
                                 int templateLength, int templateWidth, int templateHeight,
                                 Direction templateBaseDir,
                                 List<BlockPos> pathPoints, PathMode pathMode,
-                                List<String> templateBlockTypeIds, List<int[]> templateBlockData) {
+                                List<String> templateBlockTypeIds, List<int[]> templateBlockData,
+                                List<String> templateMaterialItemIds, List<Integer> templateMaterialCountsPerTile) {
         this.pendingCorner = pendingCorner;
         this.regions = regions;
         this.hasTemplate = hasTemplate;
@@ -50,6 +56,8 @@ public class S2CUpdateStatePacket {
         this.pathMode = pathMode;
         this.templateBlockTypeIds = templateBlockTypeIds;
         this.templateBlockData = templateBlockData;
+        this.templateMaterialItemIds = templateMaterialItemIds;
+        this.templateMaterialCountsPerTile = templateMaterialCountsPerTile;
     }
 
     public static S2CUpdateStatePacket fromData(PlayerPathData data) {
@@ -57,6 +65,8 @@ public class S2CUpdateStatePacket {
         Direction dir = Direction.NORTH;
         List<String> typeIds = new ArrayList<>();
         List<int[]> blockData = new ArrayList<>();
+        List<String> materialIds = new ArrayList<>();
+        List<Integer> materialCounts = new ArrayList<>();
 
         if (data.template != null) {
             len = data.template.length;
@@ -66,8 +76,8 @@ public class S2CUpdateStatePacket {
 
             // Build block type index map
             Map<String, Integer> typeMap = new LinkedHashMap<>();
-            for (Map.Entry<BlockPos, BlockState> e : data.template.blocks.entrySet()) {
-                ResourceLocation key = ForgeRegistries.BLOCKS.getKey(e.getValue().getBlock());
+            for (Map.Entry<BlockPos, TemplateBlockData> e : data.template.blocks.entrySet()) {
+                ResourceLocation key = ForgeRegistries.BLOCKS.getKey(e.getValue().state().getBlock());
                 String id = key != null ? key.toString() : "minecraft:stone";
                 if (!typeMap.containsKey(id)) typeMap.put(id, typeMap.size());
                 int idx = typeMap.get(id);
@@ -75,6 +85,13 @@ public class S2CUpdateStatePacket {
                 blockData.add(new int[]{lp.getX(), lp.getY(), lp.getZ(), idx});
             }
             typeIds.addAll(typeMap.keySet());
+
+            TemplateMaterialHelper.Analysis analysis = TemplateMaterialHelper.analyze(data.template);
+            for (Map.Entry<Item, Integer> entry : analysis.materialsPerTile().entrySet()) {
+                ResourceLocation key = ForgeRegistries.ITEMS.getKey(entry.getKey());
+                materialIds.add(key != null ? key.toString() : "minecraft:air");
+                materialCounts.add(entry.getValue());
+            }
         }
 
         return new S2CUpdateStatePacket(
@@ -83,7 +100,7 @@ public class S2CUpdateStatePacket {
                 data.hasTemplate(),
                 len, w, h, dir,
                 new ArrayList<>(data.pathPoints), data.pathMode,
-                typeIds, blockData);
+                typeIds, blockData, materialIds, materialCounts);
     }
 
     public static void encode(S2CUpdateStatePacket pkt, FriendlyByteBuf buf) {
@@ -110,6 +127,12 @@ public class S2CUpdateStatePacket {
         buf.writeInt(pkt.templateBlockData.size());
         for (int[] d : pkt.templateBlockData) {
             buf.writeInt(d[0]); buf.writeInt(d[1]); buf.writeInt(d[2]); buf.writeInt(d[3]);
+        }
+
+        buf.writeInt(pkt.templateMaterialItemIds.size());
+        for (int i = 0; i < pkt.templateMaterialItemIds.size(); i++) {
+            buf.writeUtf(pkt.templateMaterialItemIds.get(i));
+            buf.writeInt(pkt.templateMaterialCountsPerTile.get(i));
         }
     }
 
@@ -138,7 +161,16 @@ public class S2CUpdateStatePacket {
         List<int[]> bData = new ArrayList<>(nb);
         for (int i = 0; i < nb; i++) bData.add(new int[]{buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()});
 
-        return new S2CUpdateStatePacket(pending, regs, tmpl, tLen, tW, tH, dir, pts, mode, typeIds, bData);
+        int nm = buf.readInt();
+        List<String> materialIds = new ArrayList<>(nm);
+        List<Integer> materialCounts = new ArrayList<>(nm);
+        for (int i = 0; i < nm; i++) {
+            materialIds.add(buf.readUtf());
+            materialCounts.add(buf.readInt());
+        }
+
+        return new S2CUpdateStatePacket(
+                pending, regs, tmpl, tLen, tW, tH, dir, pts, mode, typeIds, bData, materialIds, materialCounts);
     }
 
     public static void handle(S2CUpdateStatePacket pkt, Supplier<NetworkEvent.Context> ctx) {

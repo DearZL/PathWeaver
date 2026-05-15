@@ -3,6 +3,7 @@ package com.liang.pathweaver.network;
 import com.liang.pathweaver.data.PlayerPathData;
 import com.liang.pathweaver.item.PathWeaverTool;
 import com.liang.pathweaver.logic.PathDataManager;
+import com.liang.pathweaver.logic.ServerActionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -28,7 +29,9 @@ public class C2SStartCornerPacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
+            if (!ServerActionGuard.canUseToolOn(player, pkt.pos)) return;
             PlayerPathData data = PathDataManager.get(player.getUUID());
+            if (!data.hasTemplate() || data.pathPoints.isEmpty() || data.hasPendingCorner() || data.hasRegions()) return;
 
             data.clearPathPoints();
             // Don't set pendingCorner yet — let the user right-click to place it.
@@ -42,9 +45,5 @@ public class C2SStartCornerPacket {
             PathWeaverTool.syncState(player, data);
         });
         ctx.get().setPacketHandled(true);
-    }
-
-    private static String fmtPos(BlockPos p) {
-        return "(" + p.getX() + "," + p.getY() + "," + p.getZ() + ")";
     }
 }

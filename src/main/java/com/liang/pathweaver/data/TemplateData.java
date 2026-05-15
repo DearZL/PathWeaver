@@ -2,9 +2,8 @@ package com.liang.pathweaver.data;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -22,8 +21,8 @@ import java.util.Map;
  *   WEST:  world = (ox-lz, oy+ly, oz-lx)
  */
 public class TemplateData {
-    // key = local (lx, ly, lz) packed as BlockPos, value = original block state
-    public final Map<BlockPos, BlockState> blocks = new HashMap<>();
+    // key = local (lx, ly, lz) packed as BlockPos, value = original block snapshot
+    public final Map<BlockPos, TemplateBlockData> blocks = new LinkedHashMap<>();
     public final Direction baseDirection;
     public final int length;  // dimension along baseDirection
     public final int width;   // dimension perpendicular (right side)

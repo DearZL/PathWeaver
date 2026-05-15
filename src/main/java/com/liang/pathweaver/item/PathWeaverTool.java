@@ -1,8 +1,11 @@
 package com.liang.pathweaver.item;
 
 import com.liang.pathweaver.data.PlayerPathData;
+import com.liang.pathweaver.data.TemplateBlockData;
 import com.liang.pathweaver.data.TemplateData;
+import com.liang.pathweaver.logic.BlockEntityDataHelper;
 import com.liang.pathweaver.logic.PathDataManager;
+import com.liang.pathweaver.logic.TemplateMaterialHelper;
 import com.liang.pathweaver.network.ModMessages;
 import com.liang.pathweaver.network.S2CUpdateStatePacket;
 
@@ -24,6 +27,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.network.PacketDistributor;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class PathWeaverTool extends Item {
@@ -126,6 +130,20 @@ public class PathWeaverTool extends Item {
             player.sendSystemMessage(Component.literal("§c[PathWeaver] 所有选区内没有方块！"));
             return;
         }
+        TemplateMaterialHelper.Analysis analysis = TemplateMaterialHelper.analyze(template);
+        if (!analysis.unsupportedBlocks().isEmpty()) {
+            List<String> preview = analysis.unsupportedBlocks();
+            int shown = Math.min(3, preview.size());
+            String joined = String.join(", ", new ArrayList<>(preview.subList(0, shown)));
+            String suffix = preview.size() > shown ? " ..." : "";
+            player.sendSystemMessage(Component.literal(
+                    "§c[PathWeaver] 模板包含当前不支持复制的方块/流体: " + joined + suffix));
+            return;
+        }
+        if (analysis.materialsPerTile().isEmpty()) {
+            player.sendSystemMessage(Component.literal("§c[PathWeaver] 模板没有可独立计费的主体方块。"));
+            return;
+        }
         data.template = template;
         data.clearSelection();
         data.clearPathPoints(); // 新模板确认时清空路径点
@@ -179,7 +197,9 @@ public class PathWeaverTool extends Item {
                         case WEST  -> maxZ - z;
                         default    -> x - minX;
                     };
-                    template.blocks.put(new BlockPos(lx, y - minY, lz), state);
+                    template.blocks.put(
+                            new BlockPos(lx, y - minY, lz),
+                            new TemplateBlockData(state, BlockEntityDataHelper.capture(level.getBlockEntity(wp))));
                 }
             }
         }
