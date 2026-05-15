@@ -55,7 +55,6 @@ public class PathWeaverTool extends Item {
         tooltip.add(Component.literal("§6▶ 生成路径"));
         tooltip.add(Component.literal("  §7Shift+左键方块 §f→ 生成（生存模式自动消耗材料）"));
         tooltip.add(Component.literal("§6▶ /pathweaver undo 撤销操作"));
-        tooltip.add(Component.literal("  §7/pathweaver undo §f→ 智能撤销（角点→框→路径点→生成）"));
         tooltip.add(Component.literal("  §7/pathweaver undo corner|region|point|generate §f→ 指定撤销"));
         tooltip.add(Component.literal("  §7  生成撤销最多 §e10§f 次，生存模式返还材料"));
     }
